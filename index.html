@@ -1,0 +1,1049 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>紅外線槍戰裝置 ｜ AT89S52 × 紅外線通訊</title>
+
+<!-- ============================================================
+     字型：Orbitron（科技英文）＋ Chakra Petch（介面英文）＋ Noto Sans TC（中文）
+     ============================================================ -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Chakra+Petch:wght@400;500;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet" />
+
+<style>
+/* ============================================================
+   1. 色彩與全域變數  ── 想換主題色改這裡就好
+   ============================================================ */
+:root{
+  --bg:        #05060c;          /* 主背景（接近全黑） */
+  --bg-2:      #0a0f1e;          /* 次背景 */
+  --panel:     rgba(15,22,40,.72);/* 卡片 / 面板底色 */
+  --line:      rgba(120,165,230,.16); /* 細線、邊框 */
+  --text:      #e3eaf8;          /* 主要文字 */
+  --muted:     #8a98b8;          /* 次要文字 */
+
+  --atk:       #ff6a1a;          /* 發射端主色（橘） */
+  --atk-2:     #ffb33a;          /* 發射端亮色 */
+  --def:       #1fe6ff;          /* 接收端主色（青） */
+  --def-2:     #3a9bff;          /* 接收端亮色 */
+
+  --maxw: 1180px;
+}
+
+/* ============================================================
+   2. 基礎 reset
+   ============================================================ */
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:"Noto Sans TC","Chakra Petch",system-ui,sans-serif;
+  line-height:1.7;
+  overflow-x:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+img{display:block;max-width:100%}
+.en{font-family:"Orbitron",sans-serif;letter-spacing:.12em}
+.mono{font-family:"Chakra Petch",monospace}
+
+/* ============================================================
+   3. 全域科技感背景：網格 + 掃描線 + 暈影（純 CSS）
+   ============================================================ */
+.fx{position:fixed;inset:0;z-index:0;pointer-events:none}
+.fx-grid{
+  background-image:
+    linear-gradient(rgba(80,130,210,.06) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(80,130,210,.06) 1px,transparent 1px);
+  background-size:46px 46px;
+  mask-image:radial-gradient(ellipse 80% 70% at 50% 30%,#000 40%,transparent 100%);
+}
+.fx-glow{
+  background:
+    radial-gradient(60% 50% at 18% 12%, rgba(255,106,26,.16), transparent 60%),
+    radial-gradient(60% 55% at 85% 18%, rgba(31,230,255,.16), transparent 60%),
+    radial-gradient(80% 60% at 50% 110%, rgba(58,155,255,.10), transparent 60%);
+}
+.fx-scan{
+  background:repeating-linear-gradient(0deg,rgba(255,255,255,.025) 0 1px,transparent 1px 3px);
+  mix-blend-mode:overlay;opacity:.5;
+}
+.fx-vignette{box-shadow:inset 0 0 220px 60px rgba(0,0,0,.85)}
+
+/* 漂浮粒子 */
+.particle{position:absolute;border-radius:50%;opacity:.0;animation:float linear infinite}
+@keyframes float{
+  0%{transform:translateY(20px);opacity:0}
+  10%{opacity:.7}
+  90%{opacity:.5}
+  100%{transform:translateY(-110vh);opacity:0}
+}
+
+/* ============================================================
+   4. 版面容器
+   ============================================================ */
+.wrap{position:relative;z-index:1}
+.container{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+section{position:relative;padding:96px 0}
+
+/* 區段小標頭 */
+.kicker{
+  display:inline-flex;align-items:center;gap:10px;
+  font-size:13px;letter-spacing:.32em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:14px;
+}
+.kicker::before{content:"";width:28px;height:1px;background:linear-gradient(90deg,var(--def),transparent)}
+.section-title{font-size:clamp(26px,4vw,42px);font-weight:900;letter-spacing:.04em;line-height:1.15}
+.section-sub{color:var(--muted);margin-top:12px;max-width:640px}
+
+/* ============================================================
+   5. 導覽列
+   ============================================================ */
+header.nav{
+  position:fixed;top:0;left:0;right:0;z-index:50;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px clamp(16px,4vw,40px);
+  background:linear-gradient(180deg,rgba(5,6,12,.92),rgba(5,6,12,.35) 70%,transparent);
+  backdrop-filter:blur(8px);
+}
+.nav-brand{display:flex;align-items:center;gap:12px;font-weight:900;letter-spacing:.04em}
+.nav-brand .logos{display:flex;gap:8px;align-items:center}
+.nav-brand .logos img{height:30px;width:auto;filter:drop-shadow(0 1px 4px rgba(0,0,0,.5));border-radius:4px}
+.nav-brand b{font-size:16px}
+.nav-brand small{display:block;font-size:11px;color:var(--muted);letter-spacing:.2em}
+.nav-links{display:flex;gap:6px;flex-wrap:wrap}
+.nav-links a{
+  font-size:13px;letter-spacing:.12em;color:var(--muted);
+  padding:8px 14px;border-radius:8px;transition:.25s;
+}
+.nav-links a:hover{color:var(--text);background:rgba(120,165,230,.08)}
+.nav-toggle{display:none}
+
+/* ============================================================
+   6. 首頁 HERO
+   ============================================================ */
+#home{padding-top:150px;padding-bottom:60px;text-align:center;min-height:100vh;display:flex;flex-direction:column;justify-content:center}
+.hero-tag{
+  display:inline-block;font-size:13px;letter-spacing:.34em;color:var(--def);
+  border:1px solid rgba(31,230,255,.35);border-radius:999px;padding:8px 20px;
+  margin:0 auto 28px;text-transform:uppercase;
+  box-shadow:0 0 24px rgba(31,230,255,.12) inset;
+}
+.hero-title{
+  font-size:clamp(44px,9vw,118px);font-weight:900;letter-spacing:.06em;line-height:1;
+  background:linear-gradient(180deg,#ffffff 30%,#9fb6e6 100%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  text-shadow:0 0 60px rgba(58,155,255,.25);
+  position:relative;
+}
+.hero-title::after{ /* 故障掃描 highlight 線 */
+  content:"";position:absolute;left:50%;bottom:-18px;transform:translateX(-50%);
+  width:min(560px,82%);height:2px;
+  background:linear-gradient(90deg,transparent,var(--atk),var(--def),transparent);
+  box-shadow:0 0 18px rgba(31,230,255,.6);
+}
+.hero-sub{
+  margin:42px auto 0;font-family:"Orbitron",sans-serif;font-weight:500;
+  font-size:clamp(14px,2.4vw,24px);letter-spacing:.18em;color:#bcd0f4;
+}
+.hero-sub .x{color:var(--atk);margin:0 .35em}
+.hero-meta{margin-top:26px;color:var(--muted);font-size:14px;letter-spacing:.06em}
+.hero-cue{margin-top:54px;display:flex;flex-direction:column;align-items:center;gap:10px;color:var(--muted)}
+.hero-cue .en{font-size:12px;letter-spacing:.3em}
+.hero-cue .arrow{width:18px;height:18px;border-right:2px solid var(--def);border-bottom:2px solid var(--def);transform:rotate(45deg);animation:bob 1.6s ease-in-out infinite}
+@keyframes bob{0%,100%{transform:rotate(45deg) translate(0,0);opacity:.4}50%{transform:rotate(45deg) translate(4px,4px);opacity:1}}
+
+/* ============================================================
+   7. 選角區 SELECT
+   ============================================================ */
+#select{padding-top:40px}
+.select-head{text-align:center;margin-bottom:40px}
+.select-head .section-sub{margin-left:auto;margin-right:auto}
+
+.stage{
+  position:relative;
+  display:flex;align-items:stretch;justify-content:center;gap:clamp(18px,4vw,52px);
+  perspective:1600px;min-height:480px;
+}
+/* 左右切換箭頭 */
+.arrow-btn{
+  flex:0 0 auto;align-self:center;
+  width:54px;height:54px;border-radius:50%;
+  border:1px solid var(--line);background:rgba(15,22,40,.6);
+  color:var(--text);font-size:22px;cursor:pointer;transition:.25s;
+  display:flex;align-items:center;justify-content:center;z-index:5;
+}
+.arrow-btn:hover{border-color:var(--def);box-shadow:0 0 22px rgba(31,230,255,.3);color:var(--def)}
+
+/* 角色卡 */
+.card{
+  --c:var(--def);--c2:var(--def-2);
+  position:relative;width:min(360px,40vw);
+  background:var(--panel);
+  border:1px solid var(--line);border-radius:18px;
+  padding:22px 22px 26px;cursor:pointer;
+  transition:transform .5s cubic-bezier(.2,.7,.2,1),box-shadow .4s,border-color .4s,opacity .4s,filter .4s;
+  transform-style:preserve-3d;overflow:hidden;
+}
+.card[data-side="atk"]{--c:var(--atk);--c2:var(--atk-2)}
+.card::before{ /* 頂部色帶 */
+  content:"";position:absolute;top:0;left:0;right:0;height:3px;
+  background:linear-gradient(90deg,transparent,var(--c),transparent);opacity:.7;
+}
+.card .corner{position:absolute;width:16px;height:16px;border:2px solid var(--c);opacity:.5}
+.card .corner.tl{top:12px;left:12px;border-right:0;border-bottom:0}
+.card .corner.tr{top:12px;right:12px;border-left:0;border-bottom:0}
+.card .corner.bl{bottom:12px;left:12px;border-right:0;border-top:0}
+.card .corner.br{bottom:12px;right:12px;border-left:0;border-top:0}
+
+.card-tag{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.card-tag .role{font-size:12px;letter-spacing:.26em;color:var(--c);text-transform:uppercase}
+.card-tag .idx{font-family:"Orbitron";font-size:12px;color:var(--muted)}
+
+/* 卡片圖片區（之後替換成 PPT 截圖） */
+.card-figure{
+  position:relative;height:230px;border-radius:12px;overflow:hidden;
+  background:
+    repeating-linear-gradient(45deg,rgba(120,165,230,.05) 0 10px,transparent 10px 20px),
+    var(--bg-2);
+  border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;
+}
+.card-figure img{width:100%;height:100%;object-fit:contain;padding:10px;
+  filter:drop-shadow(0 8px 24px rgba(0,0,0,.5));transition:transform .5s}
+.card:hover .card-figure img{transform:scale(1.04)}
+.card-figure .ring{position:absolute;inset:0;background:radial-gradient(60% 60% at 50% 50%,rgba(255,255,255,.06),transparent 70%)}
+
+.card-name{margin-top:18px;font-size:30px;font-weight:900;letter-spacing:.06em}
+.card-name span{color:var(--c)}
+.card-desc{color:var(--muted);font-size:14px;margin-top:6px;min-height:42px}
+.card-cta{
+  margin-top:16px;display:flex;align-items:center;justify-content:space-between;
+  font-family:"Orbitron";font-size:12px;letter-spacing:.16em;color:var(--c);
+}
+.card-cta .dot{width:8px;height:8px;border-radius:50%;background:var(--c);box-shadow:0 0 10px var(--c)}
+
+/* 卡片狀態：被選中 = 放大發光；未選 = 縮小變暗 */
+.card.is-active{
+  border-color:color-mix(in srgb,var(--c) 60%,transparent);
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--c) 40%,transparent),
+             0 24px 60px rgba(0,0,0,.55),
+             0 0 60px color-mix(in srgb,var(--c) 28%,transparent);
+  transform:translateZ(40px) scale(1.04);
+}
+.card.is-active::after{ /* 掃描光 */
+  content:"";position:absolute;inset:0;border-radius:18px;pointer-events:none;
+  background:linear-gradient(120deg,transparent 40%,color-mix(in srgb,var(--c) 16%,transparent) 50%,transparent 60%);
+  background-size:240% 240%;animation:sweep 3.4s linear infinite;
+}
+@keyframes sweep{0%{background-position:120% 0}100%{background-position:-120% 0}}
+.card.is-inactive{opacity:.5;filter:saturate(.6);transform:scale(.92) rotateY(8deg)}
+.card[data-side="atk"].is-inactive{transform:scale(.92) rotateY(-8deg)}
+.card:hover{border-color:color-mix(in srgb,var(--c) 50%,transparent);box-shadow:0 0 30px color-mix(in srgb,var(--c) 22%,transparent)}
+
+/* 中央 VS 徽記 */
+.vs{align-self:center;font-family:"Orbitron";font-weight:900;font-size:22px;color:var(--muted);
+  position:relative;z-index:3;text-shadow:0 0 18px rgba(120,165,230,.4)}
+
+/* ============================================================
+   8. 詳細介紹區 DETAIL（選擇後淡入切換）
+   ============================================================ */
+#detail{margin-top:54px}
+.detail-panel{display:none;animation:fadeUp .6s ease both}
+.detail-panel.show{display:block}
+@keyframes fadeUp{from{opacity:0;transform:translateY(28px)}to{opacity:1;transform:none}}
+
+.detail-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:36px;align-items:start}
+.detail-head{display:flex;align-items:center;gap:14px;margin-bottom:18px}
+.detail-head .badge{
+  font-size:12px;letter-spacing:.24em;text-transform:uppercase;
+  border:1px solid var(--dc);color:var(--dc);padding:6px 14px;border-radius:999px;
+}
+.detail-head h3{font-size:clamp(26px,4vw,40px);font-weight:900;letter-spacing:.04em}
+.detail-head h3 span{color:var(--dc)}
+
+/* 功能特點清單 */
+.feat-list{list-style:none;display:flex;flex-direction:column;gap:2px;margin-top:8px}
+.feat-list li{
+  position:relative;padding:14px 16px 14px 52px;border-radius:12px;
+  background:linear-gradient(90deg,color-mix(in srgb,var(--dc) 8%,transparent),transparent 60%);
+  border:1px solid transparent;border-left:2px solid color-mix(in srgb,var(--dc) 55%,transparent);
+  transition:.25s;
+}
+.feat-list li:hover{border-color:color-mix(in srgb,var(--dc) 40%,transparent);transform:translateX(4px)}
+.feat-list li .n{
+  position:absolute;left:14px;top:50%;transform:translateY(-50%);
+  width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;
+  font-family:"Orbitron";font-size:12px;color:var(--dc);
+  border:1px solid color-mix(in srgb,var(--dc) 45%,transparent);
+  background:color-mix(in srgb,var(--dc) 10%,transparent);
+}
+.feat-list li b{font-weight:700}
+.feat-list li small{display:block;color:var(--muted);font-size:13px;font-weight:400}
+
+/* 互動示範盒 */
+.demo{
+  background:var(--panel);border:1px solid var(--line);border-radius:16px;
+  padding:24px;position:relative;overflow:hidden;
+}
+.demo::before{content:"";position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,transparent,var(--dc),transparent)}
+.demo-title{display:flex;align-items:center;gap:10px;font-size:13px;letter-spacing:.2em;
+  color:var(--muted);text-transform:uppercase;margin-bottom:18px}
+.demo-title .live{display:flex;align-items:center;gap:6px;margin-left:auto;color:var(--dc);font-size:11px}
+.demo-title .live i{width:7px;height:7px;border-radius:50%;background:var(--dc);box-shadow:0 0 8px var(--dc);animation:blink 1.3s infinite}
+@keyframes blink{50%{opacity:.25}}
+
+.demo-readout{display:flex;align-items:center;justify-content:center;gap:24px;min-height:200px;
+  background:radial-gradient(circle at 50% 40%,rgba(120,165,230,.06),transparent 70%);
+  border-radius:12px;border:1px solid var(--line);padding:18px}
+
+/* —— 七段顯示器 —— */
+.seven-seg{--on:var(--atk);--off:rgba(255,106,26,.10);
+  width:108px;height:178px;position:relative}
+.seg{position:absolute;background:var(--off);border-radius:4px;transition:.12s;
+  box-shadow:0 0 0 rgba(255,106,26,0)}
+.seg.on{background:var(--on);box-shadow:0 0 16px var(--atk)}
+.seg.h{height:14px}.seg.v{width:14px}
+.seg.a{top:0;left:14px;right:14px}
+.seg.b{top:8px;right:0;height:74px}
+.seg.c{bottom:8px;right:0;height:74px}
+.seg.d{bottom:0;left:14px;right:14px}
+.seg.e{bottom:8px;left:0;height:74px}
+.seg.f{top:8px;left:0;height:74px}
+.seg.g{top:82px;left:14px;right:14px}
+.seg.h{} /* placeholder */
+.seg-label{font-family:"Orbitron";color:var(--muted);font-size:12px;letter-spacing:.2em;text-align:center}
+
+/* —— 8x8 點矩陣 —— */
+.matrix{display:grid;grid-template-columns:repeat(8,1fr);gap:5px;
+  background:#070b14;padding:12px;border-radius:10px;border:1px solid var(--line)}
+.dot{width:18px;height:18px;border-radius:50%;background:rgba(31,230,255,.07);transition:.18s}
+.dot.on{background:#ff3b6b;box-shadow:0 0 10px #ff3b6b,0 0 4px #ff7a9c}
+.dot.x{background:var(--def);box-shadow:0 0 10px var(--def)}
+
+.demo-info{flex:0 0 auto;text-align:center}
+.demo-info .big{font-family:"Orbitron";font-size:44px;font-weight:900;color:var(--dc);line-height:1}
+.demo-info .lab{color:var(--muted);font-size:12px;letter-spacing:.2em;margin-top:6px}
+.demo-status{margin-top:16px;text-align:center;font-size:14px;color:var(--muted);min-height:22px}
+.demo-status.alert{color:var(--atk-2)}
+.demo-status.over{color:var(--def)}
+
+.demo-btns{display:flex;gap:12px;margin-top:18px;justify-content:center;flex-wrap:wrap}
+.btn{
+  font-family:"Chakra Petch";font-weight:700;letter-spacing:.06em;cursor:pointer;
+  padding:12px 22px;border-radius:10px;border:1px solid var(--line);
+  background:rgba(15,22,40,.7);color:var(--text);transition:.2s;font-size:15px;
+}
+.btn:hover{transform:translateY(-2px)}
+.btn.primary{border-color:color-mix(in srgb,var(--dc) 60%,transparent);color:var(--dc);
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--dc) 25%,transparent) inset}
+.btn.primary:hover{box-shadow:0 0 22px color-mix(in srgb,var(--dc) 35%,transparent)}
+.btn:disabled{opacity:.4;cursor:not-allowed;transform:none}
+
+/* 受擊 / 發射 閃光 */
+.flash-atk{animation:flashA .25s}
+@keyframes flashA{0%{box-shadow:0 0 0 var(--atk)}30%{box-shadow:0 0 60px var(--atk)}100%{box-shadow:0 0 0 var(--atk)}}
+.flash-def{animation:flashD .25s}
+@keyframes flashD{0%{filter:brightness(1)}30%{filter:brightness(2.2)}100%{filter:brightness(1)}}
+
+/* 圖片走馬 / 縮圖列 */
+.gallery{margin-top:30px}
+.gallery-title{font-size:13px;letter-spacing:.2em;color:var(--muted);text-transform:uppercase;margin-bottom:14px}
+.gallery-row{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.shot{position:relative;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--bg-2);aspect-ratio:4/3}
+.shot img{width:100%;height:100%;object-fit:contain;padding:8px;transition:transform .4s}
+.shot:hover img{transform:scale(1.06)}
+.shot figcaption{position:absolute;left:0;right:0;bottom:0;padding:8px 10px;font-size:12px;
+  background:linear-gradient(0deg,rgba(5,6,12,.92),transparent);color:#cdd9f2;letter-spacing:.04em}
+
+/* ============================================================
+   9. 系統流程區 FLOW
+   ============================================================ */
+.flow-grid{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:44px}
+.flow-col{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:26px}
+.flow-col[data-side="atk"]{--fc:var(--atk)}
+.flow-col[data-side="def"]{--fc:var(--def)}
+.flow-col h4{display:flex;align-items:center;gap:12px;font-size:20px;font-weight:900;margin-bottom:22px}
+.flow-col h4 .pill{font-family:"Orbitron";font-size:11px;letter-spacing:.18em;color:var(--fc);
+  border:1px solid color-mix(in srgb,var(--fc) 50%,transparent);padding:5px 10px;border-radius:999px}
+.steps{list-style:none;position:relative;padding-left:30px}
+.steps::before{content:"";position:absolute;left:9px;top:6px;bottom:6px;width:2px;
+  background:linear-gradient(180deg,var(--fc),transparent)}
+.steps li{position:relative;padding:0 0 22px 6px}
+.steps li::before{content:"";position:absolute;left:-29px;top:4px;width:18px;height:18px;border-radius:50%;
+  border:2px solid var(--fc);background:var(--bg);box-shadow:0 0 12px color-mix(in srgb,var(--fc) 60%,transparent)}
+.steps li b{font-weight:700}
+.steps li.decision::before{border-radius:3px;transform:rotate(45deg)}
+.steps li small{display:block;color:var(--muted);font-size:13px}
+
+.flow-image{margin-top:36px;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#fff}
+.flow-image img{width:100%}
+.flow-cap{text-align:center;color:var(--muted);font-size:13px;margin-top:12px;letter-spacing:.1em}
+
+/* ============================================================
+   10. 組員分工區 TEAM
+   ============================================================ */
+.team-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:18px;margin-top:42px}
+.member{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:24px;transition:.3s;position:relative;overflow:hidden}
+.member::before{content:"";position:absolute;top:0;left:0;width:100%;height:2px;
+  background:linear-gradient(90deg,var(--atk),var(--def));transform:scaleX(0);transform-origin:left;transition:.4s}
+.member:hover{transform:translateY(-6px);border-color:rgba(120,165,230,.35)}
+.member:hover::before{transform:scaleX(1)}
+.member .avatar{width:52px;height:52px;border-radius:12px;display:flex;align-items:center;justify-content:center;
+  font-family:"Orbitron";font-weight:900;font-size:20px;color:var(--def);
+  border:1px solid rgba(31,230,255,.3);background:rgba(31,230,255,.06);margin-bottom:16px}
+.member h5{font-size:19px;font-weight:900;letter-spacing:.04em}
+.member .sid{font-family:"Chakra Petch";font-size:12px;color:var(--muted);letter-spacing:.1em;margin-top:2px}
+.member .job{color:#c7d3ee;font-size:14px;margin-top:14px;line-height:1.7}
+
+/* ============================================================
+   11. 未來展望區 FUTURE
+   ============================================================ */
+.future-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px;margin-top:42px}
+.future-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:28px;position:relative}
+.future-card .num{font-family:"Orbitron";font-size:13px;letter-spacing:.2em;color:var(--def);margin-bottom:14px}
+.future-card h5{font-size:19px;font-weight:900;margin-bottom:10px;letter-spacing:.02em}
+.future-card p{color:var(--muted);font-size:14.5px}
+
+/* ============================================================
+   12. 頁尾
+   ============================================================ */
+footer{padding:70px 0 50px;text-align:center;border-top:1px solid var(--line);margin-top:40px}
+footer .thanks{font-family:"Orbitron";font-size:clamp(24px,5vw,46px);font-weight:900;letter-spacing:.1em;
+  background:linear-gradient(90deg,var(--atk),var(--def));-webkit-background-clip:text;background-clip:text;color:transparent}
+footer .logos{display:flex;gap:18px;justify-content:center;align-items:center;margin:26px 0 18px}
+footer .logos img{height:40px;border-radius:6px}
+footer .meta{color:var(--muted);font-size:13px;letter-spacing:.08em}
+
+/* ============================================================
+   13. 進場動畫（捲動時淡入）
+   ============================================================ */
+.reveal{opacity:0;transform:translateY(36px);transition:opacity .7s ease,transform .7s ease}
+.reveal.in{opacity:1;transform:none}
+
+/* ============================================================
+   14. 響應式（手機 / 平板）
+   ============================================================ */
+@media (max-width:900px){
+  .detail-grid{grid-template-columns:1fr;gap:28px}
+  .flow-grid{grid-template-columns:1fr}
+  .gallery-row{grid-template-columns:1fr 1fr}
+}
+@media (max-width:760px){
+  .nav-links{
+    position:fixed;top:64px;right:12px;left:12px;flex-direction:column;gap:4px;
+    background:rgba(10,15,30,.97);border:1px solid var(--line);border-radius:14px;padding:12px;
+    transform:translateY(-12px) scaleY(.6);opacity:0;pointer-events:none;transform-origin:top;transition:.25s;
+  }
+  .nav-links.open{transform:none;opacity:1;pointer-events:auto}
+  .nav-links a{padding:12px;text-align:center}
+  .nav-toggle{display:flex;flex-direction:column;gap:5px;background:none;border:0;cursor:pointer;padding:8px}
+  .nav-toggle span{width:24px;height:2px;background:var(--text);display:block;transition:.25s}
+
+  /* 選角：手機一次只顯示「被選中」那張，箭頭切換 */
+  .stage{gap:8px;min-height:auto;perspective:none}
+  .vs{display:none}
+  .card{width:100%}
+  .card.is-inactive{display:none}
+  .card.is-active{transform:none}
+  .arrow-btn{width:46px;height:46px}
+
+  .gallery-row{grid-template-columns:1fr}
+  .demo-readout{flex-direction:column}
+  section{padding:72px 0}
+}
+</style>
+</head>
+
+<body>
+
+<!-- ============================================================
+     科技感背景層
+     ============================================================ -->
+<div class="fx fx-glow"></div>
+<div class="fx fx-grid"></div>
+<div class="fx fx-scan"></div>
+<div class="fx fx-vignette"></div>
+<div class="fx" id="particles"></div>
+
+<!-- ============================================================
+     導覽列
+     ============================================================ -->
+<header class="nav">
+  <div class="nav-brand">
+    <div class="logos">
+      <!-- 校徽 / 系徽：可換成自己的圖 -->
+      <img src="assets/logo-fcu.png" alt="逢甲大學" />
+      <img src="assets/logo-ee.png" alt="電機工程學系" />
+    </div>
+    <div>
+      <b>紅外線槍戰裝置</b>
+      <small class="en">INFRARED BATTLE SYSTEM</small>
+    </div>
+  </div>
+  <nav class="nav-links" id="navLinks">
+    <a href="#home">首頁</a>
+    <a href="#select">選角</a>
+    <a href="#detail">介紹</a>
+    <a href="#flow">流程</a>
+    <a href="#team">團隊</a>
+    <a href="#future">展望</a>
+  </nav>
+  <button class="nav-toggle" id="navToggle" aria-label="選單"><span></span><span></span><span></span></button>
+</header>
+
+<div class="wrap">
+
+<!-- ============================================================
+     1) 首頁 HERO
+     ============================================================ -->
+<section id="home" class="container">
+  <div class="hero-tag en">ELECTRICAL ENGINEERING · TEAM 03</div>
+  <h1 class="hero-title">紅外線槍戰裝置</h1>
+  <p class="hero-sub en">AT89S52 <span class="x">×</span> 紅外線通訊 <span class="x">×</span> 互動式遊戲</p>
+  <p class="hero-meta">電機二甲 第三組 ｜ 微處理機實習 ｜ 指導老師：王丁勇 老師</p>
+  <div class="hero-cue">
+    <span class="en">SELECT YOUR DEVICE</span>
+    <span class="arrow"></span>
+  </div>
+</section>
+
+<!-- ============================================================
+     2) 選角區 + 3) 詳細介紹區
+     ============================================================ -->
+<section id="select" class="container">
+  <div class="select-head reveal">
+    <div class="kicker">Character Select</div>
+    <h2 class="section-title">選擇你的裝置</h2>
+    <p class="section-sub">本系統分為「發射端」與「接收端」兩大角色，彼此以紅外線訊號互動對戰。點擊卡片或使用左右箭頭切換，查看完整介紹與即時互動示範。</p>
+  </div>
+
+  <!-- ───── 角色卡輪盤 ───── -->
+  <div class="stage reveal">
+    <button class="arrow-btn" id="prevBtn" aria-label="上一個">‹</button>
+
+    <!-- 發射端卡 -->
+    <article class="card" data-side="atk" data-key="atk">
+      <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
+      <div class="card-tag"><span class="role">Attacker · 發射端</span><span class="idx en">01 / 02</span></div>
+      <div class="card-figure">
+        <div class="ring"></div>
+        <!-- 角色主圖：發射端（槍）→ 替換成 PPT 槍枝截圖 -->
+        <img src="assets/gun-hero.jpg" alt="發射端 槍" />
+      </div>
+      <div class="card-name">發 射 端 · <span>槍</span></div>
+      <p class="card-desc">扣下板機，射出 38kHz 紅外線封包；七段顯示器即時顯示剩餘子彈。</p>
+      <div class="card-cta en"><span>SELECT</span><span class="dot"></span></div>
+    </article>
+
+    <div class="vs en">VS</div>
+
+    <!-- 接收端卡 -->
+    <article class="card" data-side="def" data-key="def">
+      <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
+      <div class="card-tag"><span class="role">Defender · 接收端</span><span class="idx en">02 / 02</span></div>
+      <div class="card-figure">
+        <div class="ring"></div>
+        <!-- 角色主圖：接收端（背心）→ 替換成 PPT 背心截圖 -->
+        <img src="assets/vest-hero.jpg" alt="接收端 背心" />
+      </div>
+      <div class="card-name">接 收 端 · <span>背心</span></div>
+      <p class="card-desc">紅外線接收器偵測中彈，8×8 點矩陣以愛心顯示生命值，歸零即出局。</p>
+      <div class="card-cta en"><span>SELECT</span><span class="dot"></span></div>
+    </article>
+
+    <button class="arrow-btn" id="nextBtn" aria-label="下一個">›</button>
+  </div>
+
+  <!-- ───── 詳細介紹（依選擇淡入切換） ───── -->
+  <div id="detail">
+
+    <!-- ===== 發射端詳細 ===== -->
+    <div class="detail-panel" data-panel="atk" style="--dc:var(--atk)">
+      <div class="detail-grid">
+        <!-- 左：功能特點 -->
+        <div>
+          <div class="detail-head">
+            <span class="badge en">Attacker</span>
+            <h3>發射端 ·<span> 槍</span></h3>
+          </div>
+          <ul class="feat-list">
+            <li><span class="n">01</span><b>AT89S52 控制核心</b><small>以組合語言撰寫程式，統籌發射時序與七段顯示。</small></li>
+            <li><span class="n">02</span><b>微動開關作為板機</b><small>偵測 P1.1 是否被按下，作為發射觸發訊號。</small></li>
+            <li><span class="n">03</span><b>紅外線 LED 發射 38kHz 訊號</b><small>P2.0 以 38kHz 快速切換 1.5 秒輸出紅外線封包。</small></li>
+            <li><span class="n">04</span><b>一字七段顯示器顯示子彈數</b><small>用暫存器 R4 記錄並即時顯示剩餘子彈。</small></li>
+            <li><span class="n">05</span><b>扣動板機後子彈數減一</b><small>延遲 20ms 作為冷卻與防彈跳時間。</small></li>
+            <li><span class="n">06</span><b>子彈歸零後需換彈重置</b><small>子彈數歸零顯示 0，需重新換彈才能再射擊。</small></li>
+          </ul>
+        </div>
+
+        <!-- 右：互動示範（七段顯示器） -->
+        <div class="demo" style="--dc:var(--atk)">
+          <div class="demo-title"><span>互動示範 ／ 七段顯示器</span><span class="live"><i></i>LIVE</span></div>
+          <div class="demo-readout" id="segReadout">
+            <!-- 七段顯示器（CSS 繪製） -->
+            <div>
+              <div class="seven-seg" id="sevenSeg">
+                <div class="seg h a"></div><div class="seg v b"></div><div class="seg v c"></div>
+                <div class="seg h d"></div><div class="seg v e"></div><div class="seg v f"></div>
+                <div class="seg h g"></div>
+              </div>
+              <div class="seg-label">BULLETS</div>
+            </div>
+            <div class="demo-info">
+              <div class="big" id="bulletNum">9</div>
+              <div class="lab">剩餘子彈</div>
+            </div>
+          </div>
+          <div class="demo-status" id="segStatus">扣下板機開始射擊</div>
+          <div class="demo-btns">
+            <button class="btn primary" id="fireBtn">扣板機 FIRE</button>
+            <button class="btn" id="reloadBtn">換彈重置 RELOAD</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 圖片走馬：發射端硬體 -->
+      <div class="gallery">
+        <div class="gallery-title en">Hardware · 發射端硬體</div>
+        <div class="gallery-row">
+          <!-- 之後可替換成更清楚的 PPT 截圖 -->
+          <figure class="shot"><img src="assets/gun-hero.jpg" alt="槍枝架構"><figcaption>槍枝硬體架構圖（板機 / 七段 / AT89S52）</figcaption></figure>
+          <figure class="shot"><img src="assets/gun-emit-board.jpg" alt="發射電路板"><figcaption>發射電路板（紅外線 LED）</figcaption></figure>
+          <figure class="shot"><img src="assets/gun-power-board.jpg" alt="穩壓電路板"><figcaption>穩壓電路板（9V → 5V / 7805）</figcaption></figure>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 接收端詳細 ===== -->
+    <div class="detail-panel" data-panel="def" style="--dc:var(--def)">
+      <div class="detail-grid">
+        <!-- 左：功能特點 -->
+        <div>
+          <div class="detail-head">
+            <span class="badge en">Defender</span>
+            <h3>接收端 ·<span> 背心</span></h3>
+          </div>
+          <ul class="feat-list">
+            <li><span class="n">01</span><b>紅外線接收器偵測訊號</b><small>VS1838 接收頭感測對方射出的 38kHz 紅外線。</small></li>
+            <li><span class="n">02</span><b>AT89S52 判斷是否受擊</b><small>核心判讀接收訊號，決定是否扣除生命值。</small></li>
+            <li><span class="n">03</span><b>8×8 點矩陣顯示愛心生命值</b><small>以愛心圖案呈現目前生命狀態。</small></li>
+            <li><span class="n">04</span><b>被擊中後生命值減一</b><small>受擊時愛心逐行熄滅，並進入短暫無敵冷卻。</small></li>
+            <li><span class="n">05</span><b>生命值歸零後顯示 X</b><small>愛心全數熄滅後，矩陣顯示 X 圖案。</small></li>
+            <li><span class="n">06</span><b>顯示 X 並結束遊戲</b><small>出現 X 即代表出局，遊戲結束。</small></li>
+          </ul>
+        </div>
+
+        <!-- 右：互動示範（8×8 點矩陣） -->
+        <div class="demo" style="--dc:var(--def)">
+          <div class="demo-title"><span>互動示範 ／ 8×8 點矩陣</span><span class="live"><i></i>LIVE</span></div>
+          <div class="demo-readout" id="matReadout">
+            <div class="matrix" id="matrix"><!-- 64 顆 LED 由 JS 產生 --></div>
+            <div class="demo-info">
+              <div class="big" id="hpNum">5</div>
+              <div class="lab">生命值 HP</div>
+            </div>
+          </div>
+          <div class="demo-status" id="matStatus">按「被擊中」模擬中彈</div>
+          <div class="demo-btns">
+            <button class="btn primary" id="hitBtn">被擊中 HIT</button>
+            <button class="btn" id="resetBtn">重新開始 RESET</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 圖片走馬：接收端硬體 -->
+      <div class="gallery">
+        <div class="gallery-title en">Hardware · 接收端硬體</div>
+        <div class="gallery-row">
+          <figure class="shot"><img src="assets/vest-hero.jpg" alt="背心實體"><figcaption>背心實體（8×8 點矩陣愛心）</figcaption></figure>
+          <figure class="shot"><img src="assets/vest-main-board.jpg" alt="主電路板"><figcaption>主電路板（AT89S52 / 8×8 / 接收器）</figcaption></figure>
+          <figure class="shot"><img src="assets/vest-power-board.jpg" alt="穩壓電路板"><figcaption>穩壓電路板（9V → 5V）</figcaption></figure>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     4) 系統流程區 FLOW
+     ============================================================ -->
+<section id="flow" class="container">
+  <div class="reveal">
+    <div class="kicker">System Flow</div>
+    <h2 class="section-title">系統流程</h2>
+    <p class="section-sub">兩端各自獨立運作：發射端控制子彈與紅外線輸出，接收端偵測中彈並更新生命值。</p>
+  </div>
+
+  <div class="flow-grid">
+    <!-- 發射端流程 -->
+    <div class="flow-col reveal" data-side="atk">
+      <h4><span class="pill en">ATTACKER</span>發射端（槍）</h4>
+      <ul class="steps">
+        <li><b>插入彈夾</b><small>裝填子彈，初始化子彈數</small></li>
+        <li class="decision"><b>按鈕是否按下？</b><small>偵測微動開關（板機）P1.1</small></li>
+        <li><b>發射紅外線</b><small>P2.0 輸出 38kHz 訊號 1.5 秒</small></li>
+        <li><b>等待冷卻時間</b><small>延遲 20ms 防彈跳</small></li>
+        <li><b>子彈數減一</b><small>一字七段顯示器更新數值</small></li>
+        <li class="decision"><b>子彈數歸零？</b><small>否 → 回到偵測板機；是 → 結束</small></li>
+        <li><b>結束 ／ 換彈重置</b><small>子彈歸零，需重新換彈</small></li>
+      </ul>
+    </div>
+
+    <!-- 接收端流程 -->
+    <div class="flow-col reveal" data-side="def">
+      <h4><span class="pill en">DEFENDER</span>接收端（背心）</h4>
+      <ul class="steps">
+        <li><b>啟動開關</b><small>開機並載入愛心圖案</small></li>
+        <li class="decision"><b>紅外線是否射中？</b><small>紅外線接收器偵測訊號</small></li>
+        <li><b>生命值減一</b><small>愛心逐行熄滅（8×8 點矩陣）</small></li>
+        <li><b>受擊無敵冷卻</b><small>短暫冷卻避免重複扣血</small></li>
+        <li class="decision"><b>生命值是否歸零？</b><small>否 → 回到偵測；是 → 結束</small></li>
+        <li><b>顯示 X ・ 結束</b><small>生命歸零，顯示 X 終止遊戲</small></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- 完整設計流程圖（PPT 截圖） -->
+  <div class="flow-image reveal">
+    <img src="assets/flowchart.png" alt="設計流程圖" />
+  </div>
+  <p class="flow-cap reveal">▲ 完整設計流程圖（發射端 ／ 接收端）</p>
+</section>
+
+<!-- ============================================================
+     5) 組員分工區 TEAM
+     ============================================================ -->
+<section id="team" class="container">
+  <div class="reveal">
+    <div class="kicker">The Team</div>
+    <h2 class="section-title">組員分工</h2>
+    <p class="section-sub">電機二甲 第三組 ── 五位組員共同完成硬體、軟體、PCB 與書面影片。</p>
+  </div>
+
+  <div class="team-grid">
+    <!-- 每位組員一張卡，可自由增減 / 修改 -->
+    <div class="member reveal">
+      <div class="avatar">邱</div>
+      <h5>邱暄淇</h5><div class="sid">D1352384</div>
+      <p class="job">製作書面報告、電路測試、繪製 PCB 圖、整體組裝</p>
+    </div>
+    <div class="member reveal">
+      <div class="avatar">林</div>
+      <h5>林泓妘</h5><div class="sid">D1352426</div>
+      <p class="job">設計電路、電路測試、繪製 PCB 圖、整體組裝</p>
+    </div>
+    <div class="member reveal">
+      <div class="avatar">林</div>
+      <h5>林澤毅</h5><div class="sid">D1352589</div>
+      <p class="job">硬體原理設計、焊接元件、洗電路板、影片剪輯</p>
+    </div>
+    <div class="member reveal">
+      <div class="avatar">陳</div>
+      <h5>陳宇新</h5><div class="sid">D1386419</div>
+      <p class="job">程式設計、程式除錯、紅外線測試</p>
+    </div>
+    <div class="member reveal">
+      <div class="avatar">張</div>
+      <h5>張緯鐿</h5><div class="sid">D1386422</div>
+      <p class="job">焊接元件、洗電路板、紅外線測試、整體組裝</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     6) 未來展望區 FUTURE
+     ============================================================ -->
+<section id="future" class="container">
+  <div class="reveal">
+    <div class="kicker">What's Next</div>
+    <h2 class="section-title">未來展望</h2>
+    <p class="section-sub">從單純對打邁向多人積分賽制，並深化對電路、訊號與焊接的掌握。</p>
+  </div>
+
+  <div class="future-grid">
+    <div class="future-card reveal">
+      <div class="num en">01</div>
+      <h5>多人積分賽制</h5>
+      <p>在紅外線封包中加入身分信號，接收端即可判別「被誰打到」，搭配計分程式實現多人對戰並算出得分王。</p>
+    </div>
+    <div class="future-card reveal">
+      <div class="num en">02</div>
+      <h5>藍牙連線整合</h5>
+      <p>透過藍牙統一遊戲時間並共享記分紀錄，讓多組裝置同步開始、即時更新戰況。</p>
+    </div>
+    <div class="future-card reveal">
+      <div class="num en">03</div>
+      <h5>訊號與雜訊處理</h5>
+      <p>深入認識脈衝訊號對儀器的影響，學習處理快速訊號，並提升對現實邊界條件的靈敏度。</p>
+    </div>
+    <div class="future-card reveal">
+      <div class="num en">04</div>
+      <h5>線路集中與焊接</h5>
+      <p>最小化線路結構、集中整線，並讓細部焊接更加熟練，提升整體穩定度與量產可行性。</p>
+    </div>
+  </div>
+</section>
+
+</div><!-- /.wrap -->
+
+<!-- ============================================================
+     頁尾
+     ============================================================ -->
+<footer>
+  <div class="thanks en">THANKS FOR WATCHING</div>
+  <div class="logos">
+    <img src="assets/logo-fcu.png" alt="逢甲大學" />
+    <img src="assets/logo-ee.png" alt="電機工程學系" />
+  </div>
+  <p class="meta">紅外線槍戰裝置 ｜ 電機二甲 第三組 ｜ 微處理機實習 ｜ 指導老師：王丁勇 老師</p>
+</footer>
+
+<script>
+/* ============================================================
+   JS 1：背景漂浮粒子
+   ============================================================ */
+(function makeParticles(){
+  const box = document.getElementById('particles');
+  const colors = ['#1fe6ff','#ff6a1a','#3a9bff'];
+  for(let i=0;i<26;i++){
+    const p = document.createElement('span');
+    p.className = 'particle';
+    const s = 1 + Math.random()*3;
+    p.style.width = p.style.height = s+'px';
+    p.style.left = Math.random()*100+'%';
+    p.style.bottom = '-10px';
+    p.style.background = colors[i%colors.length];
+    p.style.boxShadow = '0 0 8px '+colors[i%colors.length];
+    p.style.animationDuration = (10+Math.random()*16)+'s';
+    p.style.animationDelay = (-Math.random()*16)+'s';
+    box.appendChild(p);
+  }
+})();
+
+/* ============================================================
+   JS 2：選角輪盤 + 詳細介紹切換
+   ============================================================ */
+const cards   = [...document.querySelectorAll('.card')];
+const panels  = [...document.querySelectorAll('.detail-panel')];
+const keys    = ['atk','def'];          // 卡片順序
+let selected  = 0;                       // 預設選中發射端
+
+function select(idx, scrollToDetail){
+  selected = (idx + cards.length) % cards.length;
+  const key = keys[selected];
+  // 卡片狀態
+  cards.forEach((c,i)=>{
+    c.classList.toggle('is-active', i===selected);
+    c.classList.toggle('is-inactive', i!==selected);
+  });
+  // 詳細面板淡入切換
+  panels.forEach(p=>{
+    const show = p.dataset.panel === key;
+    p.classList.toggle('show', show);
+    if(show){ p.classList.remove('show'); void p.offsetWidth; p.classList.add('show'); } // 重觸發淡入
+  });
+  if(scrollToDetail){
+    document.getElementById('detail').scrollIntoView({behavior:'smooth',block:'start'});
+  }
+}
+
+// 點卡片 → 選中並捲動到介紹
+cards.forEach((c,i)=> c.addEventListener('click', ()=> select(i, true)));
+// 左右箭頭
+document.getElementById('prevBtn').addEventListener('click', ()=> select(selected-1,false));
+document.getElementById('nextBtn').addEventListener('click', ()=> select(selected+1,false));
+// 鍵盤左右切換
+window.addEventListener('keydown', e=>{
+  if(e.key==='ArrowLeft')  select(selected-1,false);
+  if(e.key==='ArrowRight') select(selected+1,false);
+});
+select(0,false); // 初始
+
+/* ============================================================
+   JS 3：七段顯示器互動（發射端）
+   ── 想改初始子彈數，改 MAX_BULLET 即可
+   ============================================================ */
+const MAX_BULLET = 9;
+let bullets = MAX_BULLET;
+// 七段對照表：每個數字要點亮哪些段（a,b,c,d,e,f,g）
+const SEG_MAP = {
+  0:'abcdef', 1:'bc', 2:'abged', 3:'abgcd', 4:'fgbc',
+  5:'afgcd', 6:'afgcde', 7:'abc', 8:'abcdefg', 9:'abcfgd'
+};
+const segEl     = document.getElementById('sevenSeg');
+const bulletNum = document.getElementById('bulletNum');
+const segStatus = document.getElementById('segStatus');
+const fireBtn   = document.getElementById('fireBtn');
+const reloadBtn = document.getElementById('reloadBtn');
+
+function drawSeven(n){
+  const on = SEG_MAP[n] || '';
+  segEl.querySelectorAll('.seg').forEach(s=>{
+    const seg = [...s.classList].find(c=>'abcdefg'.includes(c) && c.length===1);
+    s.classList.toggle('on', on.includes(seg));
+  });
+  bulletNum.textContent = n;
+}
+function fire(){
+  if(bullets<=0){
+    segStatus.textContent = '彈匣已空，請換彈！';
+    segStatus.classList.add('alert');
+    return;
+  }
+  bullets--;
+  drawSeven(bullets);
+  // 發射閃光
+  document.getElementById('segReadout').classList.add('flash-atk');
+  setTimeout(()=>document.getElementById('segReadout').classList.remove('flash-atk'),250);
+  if(bullets===0){
+    segStatus.textContent = '子彈歸零 → 請按「換彈重置」';
+    segStatus.classList.add('alert');
+    fireBtn.disabled = true;
+  }else{
+    segStatus.textContent = '發射！剩餘 '+bullets+' 發';
+    segStatus.classList.remove('alert');
+  }
+}
+function reload(){
+  bullets = MAX_BULLET;
+  drawSeven(bullets);
+  segStatus.textContent = '換彈完成，子彈已填滿';
+  segStatus.classList.remove('alert');
+  fireBtn.disabled = false;
+}
+fireBtn.addEventListener('click', fire);
+reloadBtn.addEventListener('click', reload);
+drawSeven(bullets);
+
+/* ============================================================
+   JS 4：8×8 點矩陣互動（接收端）
+   ── 愛心逐行熄滅 → 生命歸零顯示 X
+   ============================================================ */
+// 愛心圖案：上 7 行（第 8 行留空），1 = 亮
+const HEART = [
+  [0,1,1,0,0,1,1,0],
+  [1,1,1,1,1,1,1,1],
+  [1,1,1,1,1,1,1,1],
+  [1,1,1,1,1,1,1,1],
+  [0,1,1,1,1,1,1,0],
+  [0,0,1,1,1,1,0,0],
+  [0,0,0,1,1,0,0,0],
+  [0,0,0,0,0,0,0,0]
+];
+// X 圖案（生命歸零時顯示）
+const XMARK = [
+  [1,0,0,0,0,0,0,1],
+  [0,1,0,0,0,0,1,0],
+  [0,0,1,0,0,1,0,0],
+  [0,0,0,1,1,0,0,0],
+  [0,0,0,1,1,0,0,0],
+  [0,0,1,0,0,1,0,0],
+  [0,1,0,0,0,0,1,0],
+  [1,0,0,0,0,0,0,1]
+];
+const MAX_HP = 5;          // 生命值 5 條
+const HEART_ROWS = 7;      // 愛心圖案共 7 行（第 8 行留空）
+let hp = MAX_HP;
+const matrixEl  = document.getElementById('matrix');
+const hpNum     = document.getElementById('hpNum');
+const matStatus = document.getElementById('matStatus');
+const hitBtn    = document.getElementById('hitBtn');
+const resetBtn  = document.getElementById('resetBtn');
+
+// 建立 64 顆 LED
+const dots = [];
+for(let i=0;i<64;i++){
+  const d = document.createElement('div');
+  d.className='dot';
+  matrixEl.appendChild(d);
+  dots.push(d);
+}
+// 畫出一整顆完整愛心
+function drawHeart(){
+  for(let r=0;r<8;r++){
+    for(let c=0;c<8;c++){
+      dots[r*8+c].className = 'dot' + (HEART[r][c] ? ' on' : '');
+    }
+  }
+  hpNum.textContent = hp;
+}
+// 受擊動畫：愛心由上往下一排一排快速消失
+function wipeHeart(done){
+  let r = 0;
+  const timer = setInterval(()=>{
+    for(let c=0;c<8;c++) dots[r*8+c].className = 'dot';  // 清掉這一整排
+    r++;
+    if(r>=8){ clearInterval(timer); done && done(); }
+  }, 45);  // 每排 45ms → 快速掃過
+}
+function drawX(){
+  for(let r=0;r<8;r++) for(let c=0;c<8;c++){
+    dots[r*8+c].className = 'dot' + (XMARK[r][c] ? ' x' : '');
+  }
+  hpNum.textContent = 0;
+}
+let invincible = false;
+function hit(){
+  if(hp<=0) return;
+  if(invincible) return;          // 受擊冷卻（無敵時間）
+  hp--;
+  hpNum.textContent = hp;
+  invincible = true;
+  hitBtn.disabled = true;
+  // 受擊閃光
+  matrixEl.classList.add('flash-def');
+  setTimeout(()=>matrixEl.classList.remove('flash-def'),250);
+  // 愛心由上往下快速一排一排消失，消失後再決定下一步
+  wipeHeart(()=>{
+    if(hp<=0){
+      drawX();                                    // 生命歸零 → 顯示 X
+      matStatus.textContent = '生命歸零 → 顯示 X，遊戲結束！';
+      matStatus.className = 'demo-status over';
+      invincible = false;
+      return;
+    }
+    drawHeart();                                  // 回復整顆愛心
+    matStatus.textContent = '受擊！剩餘生命 '+hp;
+    matStatus.className = 'demo-status alert';
+    // 短暫冷卻後可再次被擊中
+    setTimeout(()=>{
+      invincible=false; hitBtn.disabled=false;
+      matStatus.textContent='可再次被擊中';
+      matStatus.className='demo-status';
+    },300);
+  });
+}
+function resetHP(){
+  hp = MAX_HP; invincible=false;
+  drawHeart();
+  matStatus.textContent='生命已重置';
+  matStatus.className='demo-status';
+  hitBtn.disabled=false;
+}
+hitBtn.addEventListener('click', hit);
+resetBtn.addEventListener('click', resetHP);
+drawHeart();
+
+/* ============================================================
+   JS 5：捲動進場動畫
+   ============================================================ */
+const io = new IntersectionObserver(entries=>{
+  entries.forEach(e=>{ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target);} });
+},{threshold:.14});
+document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+
+/* ============================================================
+   JS 6：手機選單
+   ============================================================ */
+const navToggle = document.getElementById('navToggle');
+const navLinks  = document.getElementById('navLinks');
+navToggle.addEventListener('click', ()=> navLinks.classList.toggle('open'));
+navLinks.querySelectorAll('a').forEach(a=> a.addEventListener('click', ()=> navLinks.classList.remove('open')));
+</script>
+</body>
+</html>
